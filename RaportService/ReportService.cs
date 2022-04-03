@@ -13,9 +13,10 @@ namespace RaportService
 {
     public partial class ReportService : ServiceBase
     {
-        private const int SendHour = 8;
-        private const int IntervalMinutes = 1;
-        private Timer _timer = new Timer(IntervalMinutes * 60000);//60000 ms czyli 1min 
+        private readonly int _sendHour;
+        private readonly int _intervalMinutes;
+        private bool _sendRaport;
+        private Timer _timer;//60000 ms czyli 1min 
         private ErrorRepository _errorReporitory = new ErrorRepository();
         private RaportRepository _raportReporitory = new RaportRepository();
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
@@ -42,6 +43,11 @@ namespace RaportService
                     SenderEmail = ConfigurationManager.AppSettings["SenderEmail"],
                     SenderEmailPassword = DecriptSenderEmailPassword()
             });
+
+               _sendHour = Convert.ToInt32(ConfigurationManager.AppSettings["SendHours"]);
+               _intervalMinutes = Convert.ToInt32(ConfigurationManager.AppSettings["IntervalInMinutes"]);
+               _sendRaport = Convert.ToBoolean(ConfigurationManager.AppSettings["SendRaport"]);
+               _timer = new Timer(_intervalMinutes * 60000);
             }
             catch (Exception ex)
             {
@@ -91,12 +97,12 @@ namespace RaportService
 
         private async Task SendError()
         {
-            var errors = _errorReporitory.GetLastErrors(IntervalMinutes);
+            var errors = _errorReporitory.GetLastErrors(_intervalMinutes);
 
             if (errors == null || !errors.Any())
                 return;
 
-            await _email.Send("Błedy w aplikacji", _htmlEmail.GenerateErrors(errors, IntervalMinutes), _emailReciver);
+            await _email.Send("Błedy w aplikacji", _htmlEmail.GenerateErrors(errors, _intervalMinutes), _emailReciver);
 
 
             Logger.Info("Error sent.");
@@ -104,9 +110,12 @@ namespace RaportService
         }
         private async Task SendRaport()
         {
+            if (!_sendRaport)
+                return;
+
             var actualHour = DateTime.Now.Hour;
 
-            if (actualHour < SendHour)
+            if (actualHour < _sendHour)
                 return;
 
             var raport = _raportReporitory.GetLastNotSendRaport();
@@ -119,8 +128,6 @@ namespace RaportService
             _raportReporitory.RaportSend(raport);
             
             Logger.Info("Report sent.");
-
-
         }
         protected override void OnStop()
         {
